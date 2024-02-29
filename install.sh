@@ -126,6 +126,7 @@ function _clone_and_build() {
 }
 
 function build_libxisf() {
+    sudo apt -y install cmake build-essential libzstd1
     _clone_and_build https://gitea.nouspiro.space/nou/libXISF.git $LIBXISF_RELEASE $SOURCE_FOLDER/libXISF $BUILD_FOLDER/libXISF 
 }
 
@@ -193,11 +194,11 @@ function build_indi_3rdparty() {
     local SOURCE=$SOURCE_FOLDER/indi-3rdparty
     local BUILD=$BUILD_FOLDER
 
-    #if [ -d $SOURCE ]; then
-    #    rm -rf $SOURCE
-    #fi
-    #git clone -c advice.detachedHead=false --branch $RELEASE --depth 1 $REPO $SOURCE
-    COMPONENTS=("libasi" "libatik" "indi-asi" "indi-atik" "indi-eqmod" "indi-gphoto")
+    if [ -d $SOURCE ]; then
+        rm -rf $SOURCE
+    fi
+    git clone -c advice.detachedHead=false --branch $RELEASE --depth 1 $REPO $SOURCE
+    COMPONENTS=("libasi" "libatik" "libsvbony" "indi-svbony" "indi-asi" "indi-atik" "indi-eqmod" "indi-gphoto")
     for COMPONENT in "${COMPONENTS[@]}"; do
         echo $(color green "Building $COMPONENT")
         SOURCE=$SOURCE_FOLDER/indi-3rdparty/$COMPONENT
@@ -221,6 +222,7 @@ function build_phd2() {
         build-essential \
         git \
         cmake \
+	gettext \
 	pkg-config \
         libindi-dev \
         libnova-dev \
