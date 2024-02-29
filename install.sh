@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
 SYSTEM_NAME=$(hostnamectl hostname)
+
+HOTSPOT_NAME=${HOTSPOT_NAME:-$SYSTEM_NAME}
+HOTSPOT_PASSWORD=${HOTSPOT_PASSWORD:-"password"}
+
 SOURCE_FOLDER=${SOURCE_FOLDER:-$HOME/src}
 BUILD_FOLDER=${BUILD_FOLDER:-$HOME/build}
 INSTALL_FOLDER=${INSTALL_FOLDER:-/usr}
@@ -8,6 +12,8 @@ INSTALL_FOLDER=${INSTALL_FOLDER:-/usr}
 INDI_RELEASE=${INDI_RELEASE:-"v2.0.6"}
 LIBXISF_RELEASE=${LIBXISF_RELEASE:-"v0.2.9"}
 PHD2_RELEASE=${PHD2_RELEASE:-"v2.6.13"}
+
+VNC_RESOLUTION="1920x1080"
 
 #COLOR:
 #How to use: echo $(color red "Some error in red")
@@ -31,14 +37,10 @@ function color {
 }
 
 function configure_conectivity {
+    echo $(color green "Configuring connectivity")
+
     # Determine default wifi connection
     DEFAULT_WIFI_CONNECTION=$(nmcli -t -f UUID,DEVICE connection show --active | grep wlan0 | cut -f1 -d:)
-    
-    read -p "Enter hotspot name [$SYSTEM_NAME]: " HOTSPOT_NAME
-    read -p "Enter hotspot password [password]: " HOTSPOT_PASSWORD
-    
-    HOTSPOT_NAME=${HOTSPOT_NAME:-$SYSTEM_NAME}
-    HOTSPOT_PASSWORD=${HOTSPOT_PASSWORD:-"password"}
     
     # Update default wifi connection to set priority and add autoconnect and retries
     sudo nmcli connection modify $DEFAULT_WIFI_CONNECTION \
@@ -66,12 +68,33 @@ function configure_conectivity {
         wifi-sec.key-mgmt wpa-psk \
         wifi-sec.psk "$HOTSPOT_PASSWORD" \
     && echo $(color green "Hotspot connection added. SSID: $HOTSPOT_NAME Password: $HOTSPOT_PASSWORD")
+
+    ETH0_CONNECTION=$(nmcli -t -f NAME,DEVICE connection show --active | grep eth0 | cut -f1 -d:)
+    if [ -n "$ETH0_CONNECTION" ]; then
+        sudo nmcli connection modify $ETH0_CONNECTION \
+            ipv4.method shared \
+        && echo $(color green "[$ETH0_CONNECTION] dhcp enabled.")
+    fi
+
+    # enable dnsmasq for network manager
+    sudo bash -c 'cat > /etc/NetworkManager/conf.d/10-dnsmasq.conf' << EOF
+[main]
+dns=dnsmasq
+EOF
+    sudo systemctl restart NetworkManager
+    sudo systemctl status NetworkManager | cat
 }
 
 function configure_swap {
     # Increase swap size to 2GB
+    sudo apt install -y zram-tools
+    sudo bash -c 'cat > /etc/default/zramswap' << EOF
+ALGO=lz4
+PERCENT=50
+EOF
+    sudo zramswap restart
     sudo dphys-swapfile swapoff
-    sudo sed -i 's/CONF_SWAPSIZE=[0-9]\+/CONF_SWAPSIZE=2048/' /etc/dphys-swapfile
+    sudo sed -i 's/CONF_SWAPSIZE=[0-9]\+/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
     sudo dphys-swapfile setup
     sudo dphys-swapfile swapon
 }
@@ -92,7 +115,7 @@ WorkingDirectory=/home/${USER}
 
 PIDFile=/home/${USER}/.vnc/%H:%i.pid
 ExecStartPre=-/usr/bin/vncserver -kill :%i > /dev/null 2>&1
-ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 -localhost :%i
+ExecStart=/usr/bin/vncserver -depth 24 -geometry ${VNC_RESOLUTION} :%i
 ExecStop=/usr/bin/vncserver -kill :%i
 
 [Install]
@@ -236,6 +259,56 @@ function build_phd2() {
     _clone_and_build https://github.com/OpenPHDGuiding/phd2.git $PHD2_RELEASE $SOURCE_FOLDER/phd2 $BUILD_FOLDER/phd2 
 }
 
+function install_GSC() {
+    echo $(color green "Building and Installing GSC")
+    if [ ! -d /usr/share/GSC ]
+    then
+        if [ ! -f $HOME/gsc/bincats_GSC_1.2.tar.gz ]
+        then
+            mkdir -p $HOME/gsc
+            wget -O $HOME/gsc/bincats_GSC_1.2.tar.gz http://cdsarc.u-strasbg.fr/viz-bin/nph-Cat/tar.gz?bincats/GSC_1.2
+        fi
+        cd $HOME/gsc \
+            && tar -xvzf bincats_GSC_1.2.tar.gz \
+            && cd src \
+            && make -j $(expr $(nproc) + 2)
+        sudo mv gsc.exe /usr/bin/gsc
+        rm -rf bin-dos src bincats_GSC_1.2.tar.gz bin/decode.exe bin/gsc.exe    
+        sudo mv $HOME/gsc /usr/share/GSC
+else
+	echo "GSC is already installed"
+fi
+}
+
+function install_indiweb() {
+    sudo apt install -y python3-venv
+    if [ -d $HOME/indiweb ]; then
+        rm -rf $HOME/indiweb
+    fi
+    python3 -m venv $HOME/indiweb
+    $HOME/indiweb/bin/pip install indiweb importlib-metadata
+    sudo bash -c 'cat > /etc/systemd/system/indiweb.service' << EOF
+[Unit]
+Description=INDI Web Manager
+After=multi-user.target
+
+[Service]
+Type=idle
+User=${USER}
+Environment="GSCDAT=/usr/share/GSC"
+ExecStart=$HOME/indiweb/bin/indi-web -v
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable indiweb
+    sudo systemctl start indiweb
+    sudo systemctl status indiweb | cat
+}
+
 case $1 in
     connectivity)
         configure_conectivity
@@ -258,8 +331,14 @@ case $1 in
     phd2)
         build_phd2
     ;;
+    indiweb)
+        install_indiweb
+    ;;
+    gsc)
+        install_GSC
+    ;;
     *)
-        echo "Usage: $0 {hostname|connectivity|swap|vnc|libxisf|indi-core|indi-3rdparty|phd2}"
+        echo "Usage: $0 {hostname|connectivity|swap|vnc|libxisf|indi-core|indi-3rdparty|phd2|indiweb|gsc}"
         exit 1
     ;;
 esac
