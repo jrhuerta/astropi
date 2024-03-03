@@ -271,10 +271,11 @@ function install_GSC() {
         cd $HOME/gsc \
             && tar -xvzf bincats_GSC_1.2.tar.gz \
             && cd src \
-            && make -j $(expr $(nproc) + 2)
-        sudo mv gsc.exe /usr/bin/gsc
-        rm -rf bin-dos src bincats_GSC_1.2.tar.gz bin/decode.exe bin/gsc.exe    
-        sudo mv $HOME/gsc /usr/share/GSC
+            && make -j $(expr $(nproc) + 2) \
+            && sudo mv gsc.exe /usr/bin/gsc \
+	    && cd .. \
+	    && rm -rf bin-dos src bincats_GSC_1.2.tar.gz bin/decode.exe bin/gsc.exe \
+	    && sudo mv $HOME/gsc /usr/share/GSC
 else
 	echo "GSC is already installed"
 fi
@@ -286,7 +287,7 @@ function install_indiweb() {
         rm -rf $HOME/indiweb
     fi
     python3 -m venv $HOME/indiweb
-    $HOME/indiweb/bin/pip install indiweb importlib-metadata
+    $HOME/indiweb/bin/pip install -U git+https://github.com/knro/indiwebmanager.git@master importlib-metadata 
     sudo bash -c 'cat > /etc/systemd/system/indiweb.service' << EOF
 [Unit]
 Description=INDI Web Manager
@@ -336,6 +337,9 @@ case $1 in
     ;;
     gsc)
         install_GSC
+    ;;
+    all)
+	connectivity && swap && vnc && libxisf && indi-core && indi-3rdparty && phd2 && indiweb && gsc
     ;;
     *)
         echo "Usage: $0 {hostname|connectivity|swap|vnc|libxisf|indi-core|indi-3rdparty|phd2|indiweb|gsc}"
