@@ -282,7 +282,7 @@ fi
 }
 
 function install_indiweb() {
-    sudo apt install -y python3-venv
+    sudo apt install -y python3-venv python3-dev
     if [ -d $HOME/indiweb ]; then
         rm -rf $HOME/indiweb
     fi
@@ -339,7 +339,14 @@ case $1 in
         install_GSC
     ;;
     all)
-	connectivity && swap && vnc && libxisf && indi-core && indi-3rdparty && phd2 && indiweb && gsc
+	configure_conectivity \
+		&& configure_swap \
+		&& build_libxisf \
+		&& build_indi_core \
+		&& build_indi_3rdparty \
+		&& build_phd2 \
+		&& install_indiweb \
+		&& install_gsc
     ;;
     *)
         echo "Usage: $0 {hostname|connectivity|swap|vnc|libxisf|indi-core|indi-3rdparty|phd2|indiweb|gsc}"
