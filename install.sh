@@ -69,7 +69,14 @@ function configure_conectivity {
         wifi-sec.psk "$HOTSPOT_PASSWORD" \
     && echo $(color green "Hotspot connection added. SSID: $HOTSPOT_NAME Password: $HOTSPOT_PASSWORD")
 
-    ETH0_CONNECTION=$(nmcli -t -f NAME,DEVICE connection show --active | grep eth0 | cut -f1 -d:)
+    # Enable network manager for ethernet
+    if [ -n "$(grep 'managed=false' /etc/NetworkManager/NetworkManager.conf)" ]
+    then
+        sudo sed -i "s/managed=false/managed=true/g" /etc/NetworkManager/NetworkManager.conf
+    fi
+
+    # Enable dhcp for ethernet
+    ETH0_CONNECTION=$(nmcli -t -f UUID,TYPE connection show | grep ethernet | cut -f1 -d:)
     if [ -n "$ETH0_CONNECTION" ]; then
         sudo nmcli connection modify $ETH0_CONNECTION \
             ipv4.method shared \
